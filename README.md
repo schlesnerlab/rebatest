@@ -4,7 +4,39 @@
 
 
 
-Pipeline to check for an enrichment of variants with AF < 0.01 and CADD / splicAI scores > 20 / 0.2 in case cohort in comparison to gnomAD reference cohort.
-This is beneficial if the case cohort is small and therefore statistical power is low to detect variants in disease causing genes. Using this approach, caucasian genome samples from gnomAD (~68000) are integrated as a control cohort.
+# Pipeline for Enrichment Analysis of Variants in Case Cohorts
 
-Individual sample level information is lost though. This leads to the downside that multiple variants in the same individual might artificially inflate differences. Linkage disquilibrium can also not be accounted for.
+This pipeline evaluates the enrichment of variants with:
+- **Allele Frequency (AF) < 0.01**
+- **CADD scores > 20** and / or
+- **spliceAI scores > 0.2**
+
+in a case cohort compared to the gnomAD reference cohort. It is particularly beneficial for small case cohorts where statistical power is insufficient to detect variants in disease-causing genes. Tresholds for which to filter for can be adapted.
+
+### **Advantages**
+- **Enhanced Statistical Power**: Integrates ~68,000 genome samples from the gnomAD database (caucasian genomes) as a control cohort, significantly increasing the number of control samples.
+- **Broad Variant Analysis**: Enables comparison of rare, potentially deleterious variants across case and reference populations.
+
+### **Limitations**
+- **Lack of Individual-Level Data**: Since individual sample-level data from gnomAD genomes are unavailable, this information is lost, potentially inflating differences due to multiple variants in the same individual.
+- **No Linkage Disequilibrium Accounting**: The pipeline cannot account for linkage disequilibrium between variants.
+
+
+
+---
+
+### **How to Run**
+1. Prepare a list of gene names or a bed file with regions you wish to analyze
+2. Create a conda environment based on the yaml file provided and get containers for **VEP**, **BCFTOOLS** and **BEDTOOLS** from repositories.
+3. Retrieve reference files necessary to run the pipeline (see config).
+4. Adjust values in the config to your analysis.
+5. Run snakemake workflow in the following way: *snakemake --profile scripts/snakemake_profile_cookiecutter*
+
+The workflow is written to run in a slurm based job submisson environment, but can also be run locally by altering the profile CMD line argument in the snakemake call. Values for the partition to submit to and arguments to bind certain folders might have to be adjusted / added by the user.
+
+
+### **Acknowledgments**
+gnomAD
+snakemake
+cookiecutter
+
