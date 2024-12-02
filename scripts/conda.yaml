@@ -1,0 +1,12 @@
+name: rebatest
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10.8
+  - pandas
+  - numpy
+  - scipy
+  - snakemake=7.32.4
+  - pyvcf
+  - statsmodels

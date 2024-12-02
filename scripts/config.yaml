@@ -1,0 +1,56 @@
+# Specify outlines of analysis
+#------------------------------------------------------------------------------------------------------
+# Region or gene based analysis
+check_region: False
+# Default is a CADD only analysis. If true, spliceAI is also performed
+spliceAI_analysis: True 
+# Look only at genes OR exons (False) or at genes AND exons (True --> will result in 2 result files)
+exons_and_genes_pass_to_script: True
+# Decide to look at exons / genes, if exons_and_genes_pass_to_script is False
+exons_or_genes_pass_to_script: "genes"  # "genes" or "exons"
+# Overwrites gene_name_list and performs the analysis for all genes in the gtf file; 0 = False, 1 = True
+all_genes: 0
+
+
+#------------------------------------------------------------------------------------------------------
+
+
+
+# Specify file paths
+#------------------------------------------------------------------------------------------------------
+# GTF file to extract gene and exon coordinates
+gtf_file: "path/to/gencode.v45.annotation.gtf.gz" 
+# If region based anaysis is to be performed, provide the bed file with regions
+region: "regions.bed"
+# Input vcf file with all case samples
+input_vcf: "path/to/cases.vcf.gz" 
+# File with family information (two columns: sampleID and familyID)
+sample_family: "path/to/related_samples_w_familyID.txt" 
+# Path to fasta file
+fasta: "path/to/.fasta"
+# Path to a list of selected gene names to be analyzed
+genes: "path/to/reference_files/genes.txt"
+# Path for a list of all genes contained in the gtf file
+allgenes_file: "allgenes.txt"
+# Relationship file
+relations: "related_samples.txt"
+
+
+
+vep_cadd_dir_snv: "path/to/whole_genome_SNVs.tsv.gz"
+vep_cadd_dir_indel: "path/to/gnomad.genomes.r4.0.indel.tsv.gz"
+vep_spliceai_dir_snv: "path/to/spliceai_scores.raw.snv.hg38.vcf.gz"
+vep_spliceai_dir_indel: "path/to/spliceai_scores.raw.indel.hg38.vcf.gz"
+vep_plugin_dir: "path/to/.vep/Plugins"
+vep_cache_dir: "path/to/.vep"
+#------------------------------------------------------------------------------------------------------
+
+
+# Specify thresholds
+#------------------------------------------------------------------------------------------------------
+CADD_threshold: 20
+spliceAI_threshold: 0.2
+AF_treshold: 0.01
+# Extend the region around the gene by this number of base pairs; dont extend too much <-> otherwise there can be significant overlap between genes
+bp_extension_around_gene_pass_to_script: 0
+#------------------------------------------------------------------------------------------------------

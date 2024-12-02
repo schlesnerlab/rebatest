@@ -1,0 +1,90 @@
+rule filter_spliceAI_cases:
+    input:
+        expand("workdir/tmp/cases_batch_{i}.done",i=range(cases_batch_map_length)),
+        expand("workdir/tmp/ctl_batch_{i}.done",i=range(control_batch_map_length)),
+    output:
+        os.path.join(f"workdir/case_counts_spliceAI_{spliceAI_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        spliceAI_threshold = spliceAI_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for case_file in workdir/tmp/cases_df_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$case_file" | grep -oP '(?<=cases_df_)[^\.]+(?=\.tsv)')
+            gnomad_file="workdir/tmp/gnomAD_df_${{i}}.tsv"
+            case_counts_file="workdir/tmp/case_counts_spliceAI_${{i}}.tsv"
+            
+            python scripts/filter.py --input $case_file --output $case_counts_file --condition case --threshold {params.spliceAI_threshold} --af_threshold {params.AF_treshold} --region_ID $i --control_input $gnomad_file --annotation 'spliceAI' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/case_counts_spliceAI_*.tsv; do
+            cat $file >> {output}
+            # rm $file
+        done
+        """
+
+
+rule filter_spliceAI_gnomAD:
+    input:
+       expand("workdir/tmp/ctl_batch_{i}.done",i=range(control_batch_map_length)),
+    output:
+        os.path.join(f"workdir/gnomAD_counts_spliceAI_{spliceAI_threshold}.tsv")
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        spliceAI_threshold = spliceAI_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for control_file in workdir/tmp/gnomAD_df_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$control_file" | grep -oP '(?<=gnomAD_df_)[^\.]+(?=\.tsv)')
+            control_counts_file="workdir/tmp/gnomAD_counts_spliceAI_${{i}}.tsv"
+            
+            python scripts/filter.py --input $control_file --output $control_counts_file --condition control --threshold {params.spliceAI_threshold} --af_threshold {params.AF_treshold} --region_ID $i --annotation 'spliceAI' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/gnomAD_counts_spliceAI_*.tsv; do
+            cat $file >> {output}
+            # rm $file
+        done
+        """
+
+rule statistical_test_spliceAI:
+    input:
+        gnomAD = os.path.join(f"workdir/gnomAD_counts_spliceAI_{spliceAI_threshold}.tsv"),
+        cases = os.path.join(f"workdir/case_counts_spliceAI_{spliceAI_threshold}.tsv"),
+    output:
+        os.path.join(f"workdir/results_spliceAI_{spliceAI_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 200 * attempt ),
+        partition = 'epyc',
+    params:
+        check_region = check_region,
+    shell:
+        """
+        python scripts/statistical_test.py --input1 {input.gnomAD} --input2 {input.cases} --output {output} --check_region "{params.check_region}"
+        """

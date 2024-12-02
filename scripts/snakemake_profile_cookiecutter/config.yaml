@@ -1,0 +1,30 @@
+cluster-cancel: "scancel"
+restart-times: "3"
+jobscript: "slurm-jobscript.sh"
+cluster: "slurm-submit.py"
+cluster-status: "slurm-status.py"
+max-jobs-per-second: "1"
+max-status-checks-per-second: "5"
+local-cores: 12
+latency-wait: "60"
+use-conda: "True"
+use-singularity: "True"
+jobs: "100"
+printshellcmds: "True"
+keep-going: True
+rerun-incomplete: True
+singularity-args: "-B $(pwd)" # bind all necessary directories to the container
+attempt: 1
+
+
+default-resources:
+  - partition=epyc
+  - threads=1
+  - mem_mb=5000
+  - runtime=200
+  - tmpdir='/dev/shm'
+  - gres=''
+
+
+
+

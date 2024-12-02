@@ -1,0 +1,286 @@
+rule extract_exons:
+    input:
+        gtf_file = gtf_file,
+    output:
+        bed = expand("workdir/tmp/tmpexon_{i}.bed", i=length),
+        chromosomes = "workdir/tmp/chromosomes_exon.txt"
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 200 * attempt ),
+        partition = 'epyc',
+    params:
+        gene_work_file = gene_work_file,
+        tmp_bed_pattern = "tmpexon",
+    shell:
+        "python scripts/extract_exon_to_bed.py --gtf_file {input.gtf_file} --gene_list {params.gene_work_file} --exons_or_genes 'exons' --bp_extension 0 --tmp_bed_pattern {params.tmp_bed_pattern} --chromosomes {output.chromosomes}"
+
+
+
+rule exons_gnomAD_intersect_and_harmonize:
+    input:
+        vcf = lambda wildcards: control_batch_map[int(wildcards.i)],
+        bed = expand("workdir/tmp/tmpexon_{i}.bed", i=length),
+        wait_for_genes_to_be_finished = "workdir/tmp/ctl_batch_{i}.done",
+    output:
+        "workdir/tmp/ctl_exon_batch_{i}.done"
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 2000 * attempt ),
+        partition = 'epyc',
+    shell:
+        """
+        for in_file in {input.vcf}; do
+            temp_file=$(echo "$in_file" | sed 's/gnomAD_annotated/gnomAD_annotated_exon/')
+            out_file=$(echo "$in_file" | sed 's/gnomAD_annotated_/gnomAD_dfexon_/' | sed 's/.vcf.gz/.tsv/')
+
+
+            i=$(basename "$in_file" | sed 's/gnomAD_annotated_//; s/.vcf.gz//')
+            # Construct the new path
+            bed="workdir/tmp/tmpexon_${{i}}.bed"
+
+            bedtools intersect -wa -header -a "$in_file" -b "$bed" | gzip > $temp_file
+
+            if (( $(zcat $temp_file | grep -v '^#'  | wc -l) > 0 )); then
+                python scripts/harmonize_gnomAD.py --vcf_input $temp_file --output "$out_file"
+            else
+                echo -e 'pos_id\tAN\tAC\tAN_nfe\tAC_nfe\tCADD\tspliceAI' > "$out_file"
+            fi
+        done
+
+        # rm {input.vcf} $temp_file
+
+        touch {output}
+        """
+
+
+
+
+rule exons_cases_intersect_and_get_AC_AN:
+    input:
+        vcf = lambda wildcards: cases_batch_map[int(wildcards.i)],
+        bed = expand("workdir/tmp/tmpexon_{i}.bed", i=length),
+        wait_for_genes_to_be_finished = "workdir/tmp/cases_batch_{i}.done",
+    output:
+        "workdir/tmp/cases_exon_batch_{i}.done"
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 2000 * attempt ),
+        partition = 'epyc',
+    params:
+        exons_and_genes = exons_and_genes,
+        family = "workdir/related_samples.txt",
+    shell:
+        """
+        if [ ! -e {params.family} ]; then
+            touch {params.family}
+        fi
+
+        for in_file in {input.vcf}; do
+            temp_file=$(echo "$in_file" | sed 's/cases_annotated/cases_annotated_exon/')
+            out_file=$(echo "$in_file" | sed 's/cases_annotated/cases_dfexon/' | sed 's/.vcf.gz/.tsv/')
+
+            
+            i=$(basename "$in_file" | sed 's/cases_annotated_//; s/.vcf.gz//')
+            # Construct the new path
+            bed="workdir/tmp/tmpexon_${{i}}.bed"
+            
+            bedtools intersect -wa -header -a "$in_file" -b "$bed" | gzip > $temp_file
+
+            bash scripts/get_AC_AN_cases.sh $temp_file "$out_file" {params.family}
+        done
+
+        #rm {input.vcf} $temp_file
+
+        touch {output}
+        """
+
+rule exon_filter_CADD_cases:
+    input:
+        expand("workdir/tmp/ctl_exon_batch_{i}.done",i=range(control_batch_map_length)),
+        expand("workdir/tmp/cases_exon_batch_{i}.done",i=range(cases_batch_map_length)),
+    output:
+        os.path.join(f"workdir/case_countsexon_CADD_{CADD_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        CADD_threshold = CADD_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for case_file in workdir/tmp/cases_dfexon_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$case_file" | grep -oP '(?<=cases_dfexon_)[^\.]+(?=\.tsv)')
+            gnomad_file="workdir/tmp/gnomAD_dfexon_${{i}}.tsv"
+            case_counts_file="workdir/tmp/case_countsexon_CADD_${{i}}.tsv"
+            
+            python scripts/filter.py --input $case_file --output $case_counts_file --condition case --threshold {params.CADD_threshold} --af_threshold {params.AF_treshold} --region_ID $i --control_input $gnomad_file --annotation 'CADD' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/case_countsexon_CADD_*.tsv; do
+            cat $file >> {output}
+            rm $file
+        done
+        """
+
+rule exon_filter_CADD_gnomAD:
+    input:
+        expand("workdir/tmp/ctl_exon_batch_{i}.done",i=range(control_batch_map_length)),
+    output:
+        os.path.join(f"workdir/gnomAD_countsexon_CADD_{CADD_threshold}.tsv")
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        CADD_threshold = CADD_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for control_file in workdir/tmp/gnomAD_dfexon_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$control_file" | grep -oP '(?<=gnomAD_dfexon_)[^\.]+(?=\.tsv)')
+            control_counts_file="workdir/tmp/gnomAD_countsexon_CADD_${{i}}.tsv"
+            
+            python scripts/filter.py --input $control_file --output $control_counts_file --condition control --threshold {params.CADD_threshold} --af_threshold {params.AF_treshold} --region_ID $i --annotation 'CADD' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/gnomAD_countsexon_CADD_*.tsv; do
+            cat $file >> {output}
+            rm $file
+        done
+        """
+
+
+rule exon_CADD_statistical_test:
+    input:
+        gnomAD = os.path.join(f"workdir/gnomAD_countsexon_CADD_{CADD_threshold}.tsv"),
+        cases = os.path.join(f"workdir/case_countsexon_CADD_{CADD_threshold}.tsv"),
+    output:
+        os.path.join(f"workdir/results_exon_CADD_{CADD_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 200 * attempt ),
+        partition = 'epyc',
+    params:
+        check_region = check_region,
+    shell:
+        """
+        python scripts/statistical_test.py --input1 {input.gnomAD} --input2 {input.cases} --output {output} --check_region "{params.check_region}"
+        """
+
+rule exon_filter_spliceAI_cases:
+    input:
+        expand("workdir/tmp/ctl_exon_batch_{i}.done",i=range(control_batch_map_length)),
+        expand("workdir/tmp/cases_exon_batch_{i}.done",i=range(cases_batch_map_length)),
+    output:
+        os.path.join(f"workdir/case_countsexon_spliceAI_{spliceAI_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        spliceAI_threshold = spliceAI_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for case_file in workdir/tmp/cases_dfexon_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$case_file" | grep -oP '(?<=cases_dfexon_)[^\.]+(?=\.tsv)')
+            gnomad_file="workdir/tmp/gnomAD_dfexon_${{i}}.tsv"
+            case_counts_file="workdir/tmp/case_countsexon_spliceAI_${{i}}.tsv"
+            
+            python scripts/filter.py --input $case_file --output $case_counts_file --condition case --threshold {params.spliceAI_threshold} --af_threshold {params.AF_treshold} --region_ID $i --control_input $gnomad_file --annotation 'spliceAI' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/case_countsexon_spliceAI_*.tsv; do
+            cat $file >> {output}
+            rm $file
+        done
+        """
+
+rule exon_filter_spliceAI_gnomAD:
+    input:
+        expand("workdir/tmp/ctl_exon_batch_{i}.done",i=range(control_batch_map_length)),
+    output:
+        os.path.join(f"workdir/gnomAD_countsexon_spliceAI_{spliceAI_threshold}.tsv")
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 5 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 5000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 500 * attempt ),
+        partition = 'epyc-mem',
+    params:
+        spliceAI_threshold = spliceAI_threshold,
+        AF_treshold = AF_treshold,
+    shell:
+        """
+        for control_file in workdir/tmp/gnomAD_dfexon_*.tsv; do
+            # Extract the integer i from the filename
+            i=$(echo "$control_file" | grep -oP '(?<=gnomAD_dfexon_)[^\.]+(?=\.tsv)')
+            control_counts_file="workdir/tmp/gnomAD_countsexon_spliceAI_${{i}}.tsv"
+            
+            python scripts/filter.py --input $control_file --output $control_counts_file --condition control --threshold {params.spliceAI_threshold} --af_threshold {params.AF_treshold} --region_ID $i --annotation 'CADD' &
+
+            sleep 0.15
+        done
+        wait
+
+        for file in workdir/tmp/gnomAD_countsexon_spliceAI_*.tsv; do
+            cat $file >> {output}
+            rm $file
+        done
+        """
+
+
+rule exon_statistical_test:
+    input:
+        gnomAD = os.path.join(f"workdir/gnomAD_countsexon_spliceAI_{spliceAI_threshold}.tsv"),
+        cases = os.path.join(f"workdir/case_countsexon_spliceAI_{spliceAI_threshold}.tsv"),
+    output:
+        os.path.join(f"workdir/results_exon_spliceAI_{spliceAI_threshold}.tsv")  
+    conda:
+        'base'
+    threads: lambda wildcards, attempt: ( 1 * attempt ),
+    resources: 
+        mem_mb = lambda wildcards, attempt: ( 7000 * attempt ),
+        runtime = lambda wildcards, attempt: ( 200 * attempt ),
+        partition = 'epyc',
+    params:
+        check_region = check_region,
+    shell:
+        """
+        python scripts/statistical_test.py --input1 {input.gnomAD} --input2 {input.cases} --output {output} --check_region "{params.check_region}"
+        """
