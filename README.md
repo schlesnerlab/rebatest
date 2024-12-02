@@ -37,6 +37,8 @@ The workflow is written to run in a slurm based job submisson environment, but c
 
 ### **Acknowledgments**
 gnomAD
+
 snakemake
+
 cookiecutter
 
