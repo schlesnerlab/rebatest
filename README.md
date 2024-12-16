@@ -6,7 +6,7 @@
 
 # Pipeline for Enrichment Analysis of Variants in Case Cohorts
 
-This pipeline evaluates the enrichment of variants with adjustable parameters, e.g.:
+This pipeline evaluates the enrichment of variants with **adjustable parameters**, e.g.:
 - **Allele Frequency (AF) < 0.01**
 - **CADD scores > 20** and / or
 - **spliceAI scores > 0.2**
