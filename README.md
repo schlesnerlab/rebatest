@@ -14,7 +14,7 @@ This pipeline evaluates the enrichment of variants with **adjustable parameters*
 in a case cohort compared to the gnomAD reference cohort. Tresholds for which to filter for can be adapted. It is particularly beneficial for small case cohorts where statistical power is insufficient to detect variants in disease-causing genes. Analyzing large individual-level variant datasets (e.g., UK Biobank) would ideally improve control cohort size, but requires substantial computational resources and data storage infrastructure. Additionally, existing datasets mostly represent Caucasian populations, limiting genetic studies of understudied populations. This can be circumvented by this approach. 
 
 ### **Advantages**
-- **Enhanced Statistical Power**: Integrates ~68,000 genome samples from the gnomAD database (caucasian genomes) as a control cohort, significantly increasing the number of control samples.
+- **Enhanced Statistical Power**: Integrates ~68,000 genome samples from the gnomAD database for a caucasians as a control cohort, significantly increasing the number of control samples. This number varies for different ethnicities.
 - **Broad Variant Analysis**: Enables comparison of rare, potentially deleterious variants across case and reference populations.
 
 ### **Limitations**
